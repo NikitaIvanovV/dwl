@@ -186,6 +186,7 @@ struct Monitor {
 	struct wlr_box w; /* window area, layout-relative */
 	struct wl_list layers[4]; /* LayerSurface::link */
 	const Layout *lt[2];
+	int enablegaps;
 	int gappih;           /* horizontal gap between windows */
 	int gappiv;           /* vertical gap between windows */
 	int gappoh;           /* horizontal outer gaps */
@@ -206,6 +207,7 @@ typedef struct {
 	const Layout *lt;
 	enum wl_output_transform rr;
 	int x, y;
+	int enablegaps;
 } MonitorRule;
 
 typedef struct {
@@ -380,7 +382,6 @@ static struct wlr_box sgeom;
 static struct wl_list mons;
 static Monitor *selmon;
 
-static int enablegaps = 1;   /* enables gaps, used by togglegaps */
 static void (*resize)(Client *c, struct wlr_box geo, int interact) = resizeapply;
 
 /* global event handlers */
@@ -517,7 +518,7 @@ arrange(Monitor *m)
 	if (m->lt[m->sellt]->arrange) {
 		save_width   = m->w.width;
 		save_height  = m->w.height;
-		if (enablegaps) {
+		if (m->enablegaps) {
 			m->w.width  -= m->gappih + 2 * m->gappoh;
 			m->w.height -= m->gappiv + 2 * m->gappov;
 		}
@@ -526,7 +527,7 @@ arrange(Monitor *m)
 		wl_list_for_each(c, &clients, link) {
 			if (!VISIBLEON(c, m) || c->isfloating || c->isfullscreen)
 				continue;
-			if (enablegaps)
+			if (m->enablegaps)
 				applygaps(c);
 			resizeapply(c, c->geom, c->interact);
 		}
@@ -976,6 +977,7 @@ createmon(struct wl_listener *listener, void *data)
 			wlr_output_set_transform(wlr_output, r->rr);
 			m->m.x = r->x;
 			m->m.y = r->y;
+			m->enablegaps = r->enablegaps;
 			break;
 		}
 	}
@@ -2564,7 +2566,7 @@ togglefullscreen(const Arg *arg)
 void
 togglegaps(const Arg *arg)
 {
-	enablegaps = !enablegaps;
+	selmon->enablegaps = !selmon->enablegaps;
 	arrange(selmon);
 }
 
