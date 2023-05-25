@@ -144,6 +144,8 @@ typedef struct {
 	uint32_t mods; /* invalid if nsyms == 0 */
 	struct wl_event_source *key_repeat_source;
 
+	xkb_layout_index_t layout_idx;
+
 	struct wl_listener modifiers;
 	struct wl_listener key;
 	struct wl_listener destroy;
@@ -263,6 +265,7 @@ static void fullscreennotify(struct wl_listener *listener, void *data);
 static void incnmaster(const Arg *arg);
 static void inputdevice(struct wl_listener *listener, void *data);
 static int keybinding(uint32_t mods, xkb_keysym_t sym);
+static void keymapnotify(Keyboard *kb, int update);
 static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
@@ -363,6 +366,8 @@ static struct wlr_output_layout *output_layout;
 static struct wlr_box sgeom;
 static struct wl_list mons;
 static Monitor *selmon;
+
+xkb_layout_index_t status_layout_idx = -1;
 
 /* global event handlers */
 static struct wl_listener cursor_axis = {.notify = axisnotify};
@@ -824,6 +829,8 @@ createkeyboard(struct wlr_keyboard *keyboard)
 
 	/* And add the keyboard to our list of keyboards */
 	wl_list_insert(&keyboards, &kb->link);
+
+	keymapnotify(kb, 1);
 }
 
 void
@@ -1385,6 +1392,41 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
 }
 
 void
+keymapnotify(Keyboard *kb, int update)
+{
+	Arg arg;
+	FILE *f;
+	xkb_layout_index_t num_layouts;
+
+	if (!update)
+		goto found;
+
+	num_layouts = xkb_keymap_num_layouts(kb->wlr_keyboard->keymap);
+	for (kb->layout_idx = 0; kb->layout_idx < num_layouts; kb->layout_idx++)
+		if (xkb_state_layout_index_is_active(kb->wlr_keyboard->xkb_state,
+					kb->layout_idx, XKB_STATE_LAYOUT_EFFECTIVE))
+			goto found;
+	return;
+
+found:
+	// If layout did not change, do nothing
+	if (status_layout_idx == kb->layout_idx)
+		return;
+	status_layout_idx = kb->layout_idx;
+
+	// Save current layout to keymapnotifyfile
+	if (!*keymapnotifyfile || !(f = fopen(keymapnotifyfile, "w")))
+		return;
+	fputs(xkb_keymap_layout_get_name(kb->wlr_keyboard->keymap, kb->layout_idx), f);
+	fclose(f);
+
+	// Run keymapnotifycmd
+	if (!*keymapnotifycmd) return;
+	arg.v = keymapnotifycmd;
+	spawn(&arg);
+}
+
+void
 keypress(struct wl_listener *listener, void *data)
 {
 	int i;
@@ -1403,6 +1445,8 @@ keypress(struct wl_listener *listener, void *data)
 	uint32_t mods = wlr_keyboard_get_modifiers(kb->wlr_keyboard);
 
 	IDLE_NOTIFY_ACTIVITY;
+
+	keymapnotify(kb, 0);
 
 	/* On _press_ if there is no active screen locker,
 	 * attempt to process a compositor keybinding. */
@@ -1446,6 +1490,8 @@ keypressmod(struct wl_listener *listener, void *data)
 	/* Send modifiers to the client. */
 	wlr_seat_keyboard_notify_modifiers(seat,
 		&kb->wlr_keyboard->modifiers);
+
+	keymapnotify(kb, 1);
 }
 
 int

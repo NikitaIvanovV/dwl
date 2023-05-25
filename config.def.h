@@ -10,6 +10,10 @@ static const float fullscreen_bg[]         = {0.1, 0.1, 0.1, 1.0};
 /* tagging - tagcount must be no greater than 31 */
 static const int tagcount = 9;
 
+/* keyboard layout change notification */
+static const char keymapnotifyfile[] = "/tmp/dwl-keymap";
+static const char *keymapnotifycmd[] = {"pkill", "-RTMIN+1", "someblocks", NULL};
+
 static const Rule rules[] = {
 	/* app_id     title       tags mask     isfloating   monitor */
 	/* examples:
