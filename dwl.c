@@ -201,6 +201,7 @@ typedef struct {
 	const char *title;
 	unsigned int tags;
 	int isfloating;
+	int issticky;
 	int monitor;
 } Rule;
 
@@ -454,6 +455,7 @@ applyrules(Client *c)
 		if ((!r->title || strstr(title, r->title))
 				&& (!r->id || strstr(appid, r->id))) {
 			c->isfloating = r->isfloating;
+			c->issticky   = r->issticky;
 			newtags |= r->tags;
 			i = 0;
 			wl_list_for_each(m, &mons, link)
