@@ -220,6 +220,12 @@ typedef struct {
 	struct wl_listener destroy;
 } SessionLock;
 
+typedef struct {
+	const char *cmd; /* command to run a menu */
+	void (*feed)(FILE *f); /* feed input to menu */
+	void (*action)(char *line); /* do action based on menu output */
+} Menu;
+
 /* function declarations */
 static void applybounds(Client *c, struct wlr_box *bbox);
 static void applyrules(Client *c);
@@ -272,6 +278,12 @@ static void locksession(struct wl_listener *listener, void *data);
 static void maplayersurfacenotify(struct wl_listener *listener, void *data);
 static void mapnotify(struct wl_listener *listener, void *data);
 static void maximizenotify(struct wl_listener *listener, void *data);
+static void menu(const Arg *arg);
+static int menuloop(void *data);
+static void menuwinfeed(FILE *f);
+static void menuwinaction(char *line);
+static void menulayoutfeed(FILE *f);
+static void menulayoutaction(char *line);
 static void monocle(Monitor *m);
 static void motionabsolute(struct wl_listener *listener, void *data);
 static void motionnotify(uint32_t time);
@@ -393,6 +405,11 @@ static struct wl_listener request_start_drag = {.notify = requeststartdrag};
 static struct wl_listener start_drag = {.notify = startdrag};
 static struct wl_listener session_lock_create_lock = {.notify = locksession};
 static struct wl_listener session_lock_mgr_destroy = {.notify = destroysessionmgr};
+
+static struct wl_event_source *menu_source;
+static pid_t menu_pid = 0;
+static int menu_fd;
+static const Menu *menu_current;
 
 #ifdef XWAYLAND
 static void activatex11(struct wl_listener *listener, void *data);
@@ -655,6 +672,7 @@ cleanup(void)
 #ifdef XWAYLAND
 	wlr_xwayland_destroy(xwayland);
 #endif
+	wl_event_source_remove(menu_source);
 	wl_display_destroy_clients(dpy);
 	if (child_pid > 0) {
 		kill(child_pid, SIGTERM);
@@ -1620,6 +1638,136 @@ maximizenotify(struct wl_listener *listener, void *data)
 }
 
 void
+menu(const Arg *arg)
+{
+	FILE *f;
+	pid_t pid;
+	int fd_right[2], fd_left[2];
+
+	if (!selmon || menu_pid != 0)
+		return;
+
+	menu_current = arg->v;
+
+	if (pipe(fd_right) == -1 || pipe(fd_left) == -1)
+		return;
+	if ((pid = fork()) == -1)
+		return;
+	if (pid == 0) {
+		close(fd_right[1]);
+		close(fd_left[0]);
+		dup2(fd_right[0], STDIN_FILENO);
+		close(fd_right[0]);
+		dup2(fd_left[1], STDOUT_FILENO);
+		close(fd_left[1]);
+
+		execl("/bin/sh", "/bin/sh", "-c", menu_current->cmd, NULL);
+		die("dwl: execl %s failed:", "/bin/sh");
+	}
+
+	close(fd_right[0]);
+	close(fd_left[1]);
+
+	if (!(f = fdopen(fd_right[1], "w")))
+		return;
+	menu_current->feed(f);
+	fclose(f);
+
+	menu_pid = pid;
+	menu_fd = fd_left[0];
+	wl_event_source_timer_update(menu_source, 50);
+}
+
+int
+menuloop(void *data)
+{
+	FILE *f;
+	pid_t pid;
+	char line[256], *s;
+
+	/* If process is still running, wait for another 50 ms */
+	if ((pid = waitpid(menu_pid, NULL, WNOHANG)) == 0) {
+		wl_event_source_timer_update(menu_source, 50);
+		return 0;
+	}
+
+	menu_pid = 0;
+
+	if (!(f = fdopen(menu_fd, "r")))
+		return 0;
+	if (fgets(line, sizeof(line), f)) {
+		if ((s = strchr(line, '\n')))
+			*s = '\0';
+		menu_current->action(line);
+	}
+	fclose(f);
+	return 0;
+}
+
+void
+menuwinfeed(FILE *f)
+{
+	Client *c;
+	const char *title;
+
+	wl_list_for_each(c, &fstack, flink) {
+		if (!(title = client_get_title(c)))
+			continue;
+		fprintf(f, "%s\n", title);
+	}
+}
+
+void
+menuwinaction(char *line)
+{
+	Client *c;
+	Monitor *prevm = selmon;
+	const char *title;
+
+	if (!selmon)
+		return;
+
+	wl_list_for_each(c, &fstack, flink) {
+		if (!(title = client_get_title(c)))
+			continue;
+		if (strcmp(line, title) == 0)
+			goto found;
+	}
+	return;
+
+found:
+	focusclient(c, 1);
+	wlr_cursor_move(cursor, NULL, selmon->m.x - prevm->m.x , 0);
+	selmon->seltags ^= 1; /* toggle sel tagset */
+	selmon->tagset[selmon->seltags] = c->tags;
+	arrange(selmon);
+	printstatus();
+}
+
+void
+menulayoutfeed(FILE *f)
+{
+	int i;
+	for (i = 0; i < LENGTH(layouts); i++)
+		fprintf(f, "%s\n", layouts[i].symbol);
+}
+
+void
+menulayoutaction(char *line)
+{
+	int i;
+	Arg a;
+	for (i = 0; i < LENGTH(layouts); i++)
+		if (strcmp(line, layouts[i].symbol) == 0)
+			goto found;
+	return;
+
+found:
+	a.v = &layouts[i];
+	setlayout(&a);
+}
+
+void
 monocle(Monitor *m)
 {
 	Client *c;
@@ -2298,6 +2446,9 @@ setup(void)
 	wl_signal_add(&output_mgr->events.test, &output_mgr_test);
 
 	wlr_scene_set_presentation(scene, wlr_presentation_create(dpy, backend));
+
+	menu_source = wl_event_loop_add_timer(
+			wl_display_get_event_loop(dpy), menuloop, NULL);
 
 #ifdef XWAYLAND
 	/*

@@ -10,6 +10,13 @@ static const float fullscreen_bg[]         = {0.1, 0.1, 0.1, 1.0};
 /* tagging - tagcount must be no greater than 31 */
 static const int tagcount = 9;
 
+#define MENU "bemenu"
+static const Menu menus[] = {
+	/* command                            feed function        action function */
+	{ MENU " -i -l 5 -p Windows",         menuwinfeed,         menuwinaction    },
+	{ MENU " -i -p Layouts",              menulayoutfeed,      menulayoutaction },
+};
+
 static const Rule rules[] = {
 	/* app_id     title       tags mask     isfloating   monitor */
 	/* examples:
@@ -124,6 +131,8 @@ static const Key keys[] = {
 	{ MODKEY,                    XKB_KEY_f,          setlayout,      {.v = &layouts[1]} },
 	{ MODKEY,                    XKB_KEY_m,          setlayout,      {.v = &layouts[2]} },
 	{ MODKEY,                    XKB_KEY_space,      setlayout,      {0} },
+	{ MODKEY,                    XKB_KEY_o,          menu,           {.v = &menus[0]} },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          menu,           {.v = &menus[1]} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      togglefloating, {0} },
 	{ MODKEY,                    XKB_KEY_e,         togglefullscreen, {0} },
 	{ MODKEY,                    XKB_KEY_0,          view,           {.ui = ~0} },
