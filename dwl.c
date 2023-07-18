@@ -2250,12 +2250,20 @@ setup(void)
 	cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(cursor, output_layout);
 
+	/* Get cursor size from XCURSOR_SIZE. */
+	i = getenv("XCURSOR_SIZE") ? atoi(getenv("XCURSOR_SIZE")) : 0;
+	if (i == 0) {
+		/* If XCURSOR_SIZE is unset or contains an invalid number,
+		 * fallback to 24. */
+		i = 24;
+		setenv("XCURSOR_SIZE", "24", 0);
+	}
+
 	/* Creates an xcursor manager, another wlroots utility which loads up
 	 * Xcursor themes to source cursor images from and makes sure that cursor
 	 * images are available at all scale factors on the screen (necessary for
 	 * HiDPI support). Scaled cursors will be loaded with each output. */
-	cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
-	setenv("XCURSOR_SIZE", "24", 1);
+	cursor_mgr = wlr_xcursor_manager_create(getenv("XCURSOR_THEME"), i);
 
 	/*
 	 * wlr_cursor *only* displays an image on screen. It does not move around
