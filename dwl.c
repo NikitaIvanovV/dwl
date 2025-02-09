@@ -287,6 +287,7 @@ static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
 static Client *focustop(Monitor *m);
 static void fullscreennotify(struct wl_listener *listener, void *data);
+static Rule *getrule(Client *c);
 static void gpureset(struct wl_listener *listener, void *data);
 static void handlesig(int signo);
 static void incnmaster(const Arg *arg);
@@ -327,6 +328,7 @@ static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
 static void setmon(Client *c, Monitor *m, uint32_t newtags);
 static void setpsel(struct wl_listener *listener, void *data);
+static void setruleisfloating(const Arg *arg);
 static void setsel(struct wl_listener *listener, void *data);
 static void setup(void);
 static void spawn(const Arg *arg);
@@ -436,6 +438,9 @@ static struct wl_listener request_start_drag = {.notify = requeststartdrag};
 static struct wl_listener start_drag = {.notify = startdrag};
 static struct wl_listener new_session_lock = {.notify = locksession};
 
+static Rule *drules;
+static size_t druleslen;
+
 #ifdef XWAYLAND
 static void activatex11(struct wl_listener *listener, void *data);
 static void associatex11(struct wl_listener *listener, void *data);
@@ -486,7 +491,7 @@ applyrules(Client *c)
 	appid = client_get_appid(c);
 	title = client_get_title(c);
 
-	for (r = rules; r < END(rules); r++) {
+	for (r = drules; r < drules + druleslen; r++) {
 		if ((!r->title || strstr(title, r->title))
 				&& (!r->id || strstr(appid, r->id))) {
 			c->isfloating = r->isfloating;
@@ -1532,6 +1537,51 @@ fullscreennotify(struct wl_listener *listener, void *data)
 	setfullscreen(c, client_wants_fullscreen(c));
 }
 
+Rule *
+getrule(Client *c)
+{
+	Rule *r;
+	const Rule *e;
+	const char *appid, *title;
+
+	if (!c)
+		return NULL;
+	
+	appid = client_get_appid(c);
+	title = client_get_title(c);
+
+	for (r = drules + druleslen - 1; r >= drules; r--)
+		if ((!r->title || strstr(title, r->title))
+				&& (!r->id || strstr(appid, r->id)))
+			goto found;
+
+	if (druleslen >= LENGTH(rules) + RULES_MAX)
+		return NULL; /* No free slots left */
+
+	r = drules + druleslen++;
+
+	/* Use [NULL,NULL] as the default rule if exists */
+	for (e = rules; e < END(rules); e++)
+		if (!e->title && !e->id) {
+			*r = *e;
+			break;
+		}
+
+	/* No default rule found, set reasoble defaults */
+	if (e >= END(rules)) {
+		r->monitor = -1;
+	}
+
+	/* Only set title if appid is unset */
+	if (strcmp(appid, "broken") == 0)
+		r->title = strdup(title);
+	else
+		r->id = strdup(appid);
+
+found:
+	return r;
+}
+
 void
 gpureset(struct wl_listener *listener, void *data)
 {
@@ -2432,6 +2482,15 @@ setpsel(struct wl_listener *listener, void *data)
 }
 
 void
+setruleisfloating(const Arg *arg)
+{
+	Rule *r = getrule(focustop(selmon));
+	if (!r)
+		return;
+	r->isfloating = !r->isfloating;
+}
+
+void
 setsel(struct wl_listener *listener, void *data)
 {
 	/* This event is raised by the seat when a client wants to set the selection,
@@ -2664,6 +2723,10 @@ setup(void)
 		fprintf(stderr, "failed to setup XWayland X server, continuing without it\n");
 	}
 #endif
+
+	drules = ecalloc(LENGTH(rules) + RULES_MAX, sizeof(Rule));
+	memcpy(drules, rules, sizeof(rules));
+	druleslen = LENGTH(rules);
 }
 
 void
