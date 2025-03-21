@@ -20,6 +20,12 @@ static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f}; /* You ca
 /* logging */
 static int log_level = WLR_ERROR;
 
+static const Menu menus[] = {
+	/* command                            feed function        action function */
+	{ "wmenu -i -l 10 -p Windows",        menuwinfeed,         menuwinaction    },
+	{ "wmenu -i -p Layouts",              menulayoutfeed,      menulayoutaction },
+};
+
 static const Rule rules[] = {
 	/* app_id             title       tags mask     isfloating   monitor */
 	{ "Gimp_EXAMPLE",     NULL,       0,            1,           -1 }, /* Start on currently visible tags floating, not tiled */
@@ -136,6 +142,8 @@ static const Key keys[] = {
 	{ MODKEY,                    XKB_KEY_f,           setlayout,        {.v = &layouts[1]} },
 	{ MODKEY,                    XKB_KEY_m,           setlayout,        {.v = &layouts[2]} },
 	{ MODKEY,                    XKB_KEY_space,       setlayout,        {0} },
+	{ MODKEY,                    XKB_KEY_o,           menu,             {.v = &menus[0]} },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,           menu,             {.v = &menus[1]} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,       togglefloating,   {0} },
 	{ MODKEY,                    XKB_KEY_e,           togglefullscreen, {0} },
 	{ MODKEY,                    XKB_KEY_0,           view,             {.ui = ~0} },
